@@ -1,0 +1,52 @@
+   //多单：
+   double lot=0.01;
+      int ticket=OrderSend(Symbol(),OP_BUY,lot,Ask,3,0,0,"Buy",1234,0,Red);
+      if(ticket<0)
+       {
+        Print("OrderSend Error #",GetLastError());
+        return(0);
+       }
+   //空单
+   double lot=0.01;
+      int ticket=OrderSend(Symbol(),OP_SELL,lot,Bid,3,0,0,"Sell",1234,0,Lime);
+      if(ticket<0)
+       {
+        Print("OrderSend Error #",GetLastError());
+        return(0);
+       }
+	   
+	   
+	   :: 输入参数
+ int  OrderSend( 
+   string   symbol,              // symbol -通货标示
+   int      cmd,                 // cmd - 购买方式
+   double   volume,              // volume - 购买手数
+   double   price,               // price – 开仓价格
+   int      slippage,            // slippage - 最大允许滑点数
+   double   stoploss,            // stoploss - 止损价 
+   double   takeprofit,          // takeprofit - 获利价
+   string   comment=NULL,        // comment - 注释 
+   int      magic=0,             // magic - 自定义编号 
+   datetime expiration=0,        // 过期时间(只适用于待处理订单)
+   color    arrow_color=clrNONE  // arrow_color - 箭头颜色
+   );
+sample：
+void OnStart() 
+  { 
+//--- get minimum stop level 
+   double minstoplevel=MarketInfo(Symbol(),MODE_STOPLEVEL); 
+   Print("Minimum Stop Level=",minstoplevel," points"); 
+   double price=Ask; 
+//--- calculated SL and TP prices must be normalized 
+   double stoploss=NormalizeDouble(Bid-minstoplevel*Point,Digits); 
+   double takeprofit=NormalizeDouble(Bid+minstoplevel*Point,Digits); 
+//--- place market order to buy 1 lot 
+   int ticket=OrderSend(Symbol(),OP_BUY,1,price,3,stoploss,takeprofit,"My order",16384,0,clrGreen); 
+   if(ticket<0) 
+     { 
+      Print("OrderSend failed with error #",GetLastError()); 
+     } 
+   else 
+      Print("OrderSend placed successfully"); 
+//--- 
+  }
