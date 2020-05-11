@@ -1,0 +1,274 @@
+
+//+------------------------------------------------------------------+
+//|                                                  MA Cross1.1.mq4 |
+//|                                                          Mr Gao  |
+//|                                                 364429340@qq.com |
+//+------------------------------------------------------------------+
+#property copyright "Mr Gao"
+#property link      "364429340@qq.com"
+#property version   "1.10"
+#property strict
+//---
+input double            手数=0.1;
+input string            说明1="止损要大于平台止损限制+点差";
+input double            止损=100;
+input double            止盈=300;
+input bool              反向平仓=false;
+input bool              移动止损=false;
+input int               多单提损=400;
+input int               空单提损=400;
+input string            说明2="当提损Y点，则止损移动X点";
+input int               移动止损幅度=200;
+input double            倍投系数=1.5;
+input double            最大倍投手数=20;
+input bool              入场均线交叉开仓=true;
+input ENUM_MA_METHOD    MA1类型=MODE_EMA;//入场快线类型
+input int               MA1=10;//入场信号的快线
+input ENUM_MA_METHOD    MA2类型=MODE_EMA;//入场慢线类型
+input int               MA2=20;//入场信号的慢线
+input ENUM_MA_METHOD    MA3类型=MODE_EMA;//方向快线类型
+input int               MA3=50;//判断方向的快线
+input ENUM_MA_METHOD    MA4类型=MODE_EMA;//方向慢线类型
+input int               MA4=60;//判断方向的慢线
+input int               滑点=30;
+//---
+int buyfuwei=多单提损;
+int sellfuwei=空单提损;
+double lots_min,lots_max,lots_step;
+int lots_digits;
+//---
+int OnInit()
+  {
+//---
+   if(MA4<=MA3 || MA2<=MA1)
+     {
+      Alert("均线设置错误，快线设置要小于慢线");
+      return(INIT_FAILED);
+     }
+   lots_min=MarketInfo(Symbol(),MODE_MINLOT);//最小手数
+   lots_max=MarketInfo(Symbol(),MODE_MAXLOT);//最大手数
+   lots_step=MarketInfo(Symbol(),MODE_LOTSTEP);
+   if(lots_step<10)  lots_digits=0;
+   if(lots_step<1)   lots_digits=1;
+   if(lots_step<0.1) lots_digits=2;
+   return(INIT_SUCCEEDED);
+  }
+//---
+void OnTick()
+  {
+//定义均线值-------------------------------------------------------------------
+   double ma1=iMA(Symbol(),0,MA1,0,MA1类型,PRICE_CLOSE,1);
+   double ma2=iMA(Symbol(),0,MA2,0,MA2类型,PRICE_CLOSE,1);
+   double ma3=iMA(Symbol(),0,MA3,0,MA3类型,PRICE_CLOSE,1);
+   double ma4=iMA(Symbol(),0,MA4,0,MA4类型,PRICE_CLOSE,1);
+   double ma1p=iMA(Symbol(),0,MA1,0,MA1类型,PRICE_CLOSE,2);
+   double ma2p=iMA(Symbol(),0,MA2,0,MA2类型,PRICE_CLOSE,2);
+//buy条件：没到止盈出现反向信号平仓--------------------------------------------
+   if(ma3>ma4 &&
+      ((入场均线交叉开仓 && ma1>ma2 && ma1p<ma2p) ||
+        (!入场均线交叉开仓 && ma1>ma2)))
+     {
+      if(反向平仓)
+        {
+         for(int i=0;i<OrdersTotal();i++) //扫描订单总数
+           {
+            if(OrderSelect(i,SELECT_BY_POS,MODE_TRADES)) //选定当前持单
+              {
+               if((OrderComment()==(Symbol()+"sell"))) //如果持有空单注释一样  
+                 {
+                   bool odc=OrderClose(OrderTicket(),OrderLots(),Ask,滑点); //空仓平仓            
+                 }
+              }
+           }
+        }
+         double lots=getlots();
+         if(lots<=lots_max && lots>=lots_min)
+           {
+            if((buy(lots,止损,止盈,Symbol()+"buy",0)>0)&&(移动止损==true)) //下多单
+              {
+                 buyfuwei=多单提损;
+              }
+            }
+      }
+      
+//sell条件：没到止盈出现反向信号平仓-------------------------------------------------------------------
+   if(ma3<ma4 &&
+     ((入场均线交叉开仓 && ma1<ma2 && ma1p>ma2p) ||
+      (!入场均线交叉开仓 && ma1<ma2)))
+     {
+      if(反向平仓)
+        {
+         for(int i=0;i<OrdersTotal();i++)
+           {
+            if(OrderSelect(i,SELECT_BY_POS,MODE_TRADES))
+              {
+               if((OrderComment()==(Symbol()+"buy")))
+                 {
+                   bool odc=OrderClose(OrderTicket(),OrderLots(),Bid,滑点);          
+                 }
+              }
+           }
+        }
+         double lots=getlots();
+         if(lots<=lots_max && lots>=lots_min)
+           {
+            if((sell(lots,止损,止盈,Symbol()+"sell",0)>0)&&(移动止损==true))
+              {
+                 sellfuwei=空单提损;
+              }
+           }
+      }
+  
+//追踪止损设置-------------------------------------------------------------------
+    if(移动止损==true)
+      {
+        for(int i=0;i<OrdersTotal();i++) //扫描订单总数
+          {
+            if(OrderSelect(i,SELECT_BY_POS,MODE_TRADES)) //选定当前持单
+              {
+                if((OrderComment()==(Symbol()+"buy"))) //如果持单编号一致
+                  {
+                    if(((Bid-OrderOpenPrice())/Point)>=buyfuwei) //如果买价-开仓价/点数>=移动止损
+                      {
+                        double buysl=OrderStopLoss(); //获取订单止损价格
+                        if(OrderModify(OrderTicket(),OrderOpenPrice(),buysl+移动止损幅度*Point,OrderTakeProfit(),0)==true)
+                        //修改止损:止损价+移动止损幅度
+                          {
+                            buyfuwei=buyfuwei+移动止损幅度; //从新赋值移动止损
+                          }
+                      }                
+                  }
+                if((OrderComment()==(Symbol()+"sell")))    
+                  {
+                    if(((OrderOpenPrice()-Ask)/Point)>=sellfuwei)
+                      {
+                        double sellsl=OrderStopLoss();
+                        if(OrderModify(OrderTicket(),OrderOpenPrice(),sellsl-移动止损幅度*Point,OrderTakeProfit(),0)==true)
+                          {
+                           sellfuwei=sellfuwei+移动止损幅度;
+                          }
+                      }                
+                  }
+              }
+          }
+      }
+  }
+
+//获取lot函数---------------------------------------------------------------------------  
+double getlots()
+  {
+    double lotsok=手数;
+    if(OrdersHistoryTotal()>0)
+      {
+        for(int i=OrdersHistoryTotal()-1;i>0;i--)
+          {
+            if(OrderSelect(i,SELECT_BY_POS,MODE_HISTORY))
+              {
+                if(OrderSymbol()==Symbol())
+                  {
+                    if(OrderMagicNumber()==0)
+                      {
+                        if(OrderProfit()>0)
+                          {
+                            lotsok=手数;
+                          }
+                        else
+                          {
+                            lotsok=OrderLots()*倍投系数;
+                            lotsok=NormalizeDouble(lotsok,lots_digits);
+                            if(lotsok>最大倍投手数)
+                              {
+                               Print("超出最大倍投手数，实际手数应为: "+DoubleToStr(lotsok,lots_digits));
+                               lotsok=最大倍投手数;
+                              }
+                            break;
+                          }
+                         break;
+                      }
+                  }
+              }
+          }
+      }
+    else
+      {
+       return(lotsok);
+      }
+   if(lotsok>lots_max)  {lotsok=lots_max; Alert(Symbol()+" 警告：Lots超过最大手数，注意风险，最大手数为："+DoubleToStr(lots_max,lots_digits));}
+   if(lotsok<lots_min)  {Alert(Symbol()+" 警告：Lots低于最小手数，停止开仓，最小手数为："+DoubleToStr(lots_min,lots_digits));}
+   return(lotsok);
+  }
+
+//buy函数----------------------------------------------------------------
+int buy(double Lots,double sun,double ying,string comment,int magic)
+  {
+    int kaiguan=0; //初始化开关为打开
+    for(int i=0;i<OrdersTotal();i++) //扫描订单总数
+      {
+        if(OrderSelect(i,SELECT_BY_POS,MODE_TRADES)) //选定当前持单
+          {
+            if((OrderComment()==comment)&&(OrderMagicNumber()==magic)) //如果当前持单注释和编号和设定的一致，则开关关闭不下单。    
+              {
+                kaiguan=1;                    
+              }
+          }
+      }
+    if(kaiguan==0) //如果开关打开
+      {
+        int ticket=OrderSend(Symbol( ) ,OP_BUY,Lots,Ask,滑点,0,0,comment,magic,0,White); //开仓买入多单，不设止盈止损（下单成功返回编号，失败返回-1）
+        if(ticket>0) //下单成功
+          {
+            if(OrderSelect(ticket, SELECT_BY_TICKET)==true) //选定订单如果编号一致
+              {
+                double tp=0,sl=0;
+                if(ying>0) tp=OrderOpenPrice()+ying*MarketInfo(Symbol(),MODE_POINT);//止盈价格
+                if(sun>0)  sl=OrderOpenPrice()-sun*MarketInfo(Symbol(),MODE_POINT);//止损价格
+                if(tp>0 && tp<=Bid) Alert("止盈价格小于卖价，无法设置");
+                if(sl>0 && sl>=Bid) Alert("止损价格大于卖价，无法设置");
+                //修改订单止损止盈
+                bool mod=OrderModify(OrderTicket(),OrderOpenPrice(),sl,tp,0,Red);
+              }
+          }
+       return(ticket);
+     }
+   else
+     {
+      return(0);
+     }
+  }
+  
+//sell函数----------------------------------------------------------------
+int sell(double Lots,double sun,double ying,string comment,int magic)
+  {
+    int kaiguan=0;
+    for(int i=0;i<OrdersTotal();i++)
+      {
+        if(OrderSelect(i,SELECT_BY_POS,MODE_TRADES))
+          {
+            if((OrderComment()==comment)&&(OrderMagicNumber()==magic))  
+              {
+                kaiguan=1;                    
+              }
+          }
+      }
+    if(kaiguan==0)
+      {
+        int ticket=OrderSend(Symbol( ) ,OP_SELL,Lots,Bid,滑点,0,0,comment,magic,0,Red);
+        if(ticket>0)
+          {
+            if(OrderSelect(ticket, SELECT_BY_TICKET)==true)
+              {
+                double tp=0,sl=0;
+                if(ying>0) tp=OrderOpenPrice()-ying*MarketInfo(Symbol(),MODE_POINT);
+                if(sun>0)  sl=OrderOpenPrice()+sun*MarketInfo(Symbol(),MODE_POINT);
+                if(tp>0 && tp>=Ask) Alert("止盈价格大于买价，无法设置");
+                if(sl>0 && sl<=Ask) Alert("止损价格小于买价，无法设置");
+                bool mod=OrderModify(OrderTicket(),OrderOpenPrice(),sl,tp,0,Red);
+              }
+          }
+        return(ticket);
+      }
+    else
+      {
+        return(0);
+      }
+  }
