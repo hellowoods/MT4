@@ -1,0 +1,86 @@
+MT4自带交易系统（EA）：MACD Sample的详解
+//+------------------------------------------------------------------+
+//|                  MACD Sample.mq4                      |
+//|     Copyright ?2005, MetaQuotes Software Corp.      |
+//|                  http://www.imt4.com/                     |
+//+------------------------------------------------------------------+
+extern double TakeProfit = 50;  盈利目标点数
+extern double Lots = 0.1;     每单入场的手数
+extern double TrailingStop = 30; 追踪止损的点数
+extern double MACDOpenLevel=3; MACD开仓的参考位置
+extern double MACDCloseLevel=2; MACD出场的参考位置
+extern double MATrendPeriod=26; 条件中使用的MA均线的周期数
+程序最上面extern开始的这些数据都是程序参数，也就是在使用者调用的时候可以修改的部分。
+这个EA是个常见的技术指标条件入场，条件出场 同时又移动止损功能的完成示意，很适合初学者研究。
+先总结这个程序的基本条件的意思 以方便大家对号入座，尽快理解。
+多头入场条件：
+   MACD小于0 并且 小于指定的参数MACDOpenLevel   并且 MACD讯号下下穿基准线（死叉） 并且 MA向上趋势
+多头出场条件：
+   MACD大于0 并且 大于指定的参数MACDCloseLevel 并且 MACD信号线上传基准线（金叉）
+空头入场条件：
+MACD大于0 并且 大于指定的参数MACDOpenLevel  并且 MACD讯号线上穿基准线（金叉） 并且 MA向下趋势
+空头出场条件：
+MACD小于0 并且 小于制定的参数MACDCloseLevel  并且 MACD讯号线下穿基准线（死叉）
+=============================================================
+有了以上的初步了解，下面开始进行EA程序基本结构的分析：
+1、start()函数是最重要的执行部分，每来一个价格 此函数都自动执行一次，所以主要的逻辑结构都在这个函数里
+2、程序的基本流程都是按照以下步骤进行，我们先牢牢记住这个结构，然后再对号入座去理解程序。
+先判断当前自身的仓位状态，因为start函数式循环运行的，所以中间的每个步骤都会使用start函数，因此，当函数开始的时候我们首先要通过MT4的仓位操作函数获得当前的仓位状态，并进一步根据状态进行不同分支的计算。
+程序开始的以下两个部分不重要 简单说一下：
+if(Bars<100)
+    {
+   Print("bars less than 100");
+  return(0);  
+    }
+以上是说如果当前图形的K线个数少于100 则不进行运算 直接返回。这种情况一般不会出现，所以我们自己写程序的时候可以不写这部分。
+if(TakeProfit<10)
+    {
+   Print("TakeProfit less than 10");
+   return(0);  // check TakeProfit
+    }
+以上这段意思是参数TakeProfit移动止损点数的设定如果小于10点，则发出报警，并返回不进行运算。这是为了防止乱设数值，引起后面计算的错误。这部分，如果程序只是我们自己使用，估计不会犯这种低级错误，所以写程序的时候也可以忽略不写。
+下面这段：
+MacdCurrent=iMACD(NULL,0,12,26,9,PRICE_CLOSE,MODE_MAIN,0);
+MacdPrevious=iMACD(NULL,0,12,26,9,PRICE_CLOSE,MODE_MAIN,1);
+SignalCurrent=iMACD(NULL,0,12,26,9,PRICE_CLOSE,MODE_SIGNAL,0);
+SignalPrevious=iMACD(NULL,0,12,26,9,PRICE_CLOSE,MODE_SIGNAL,1);
+MaCurrent=iMA(NULL,0,MATrendPeriod,0,MODE_EMA,PRICE_CLOSE,0);
+MaPrevious=iMA(NULL,0,MATrendPeriod,0,MODE_EMA,PRICE_CLOSE,1);
+这部分是变量赋值部分，等于提前计算出为后面用到的当前MACD数值以及MA数值，这样提前写出来在后面直接使用赋值后的变量就很清楚了。是很好的编程习惯。
+  再下面开始最主要的程序逻辑部分，首先遇到的就是我们上面说过的通过仓位函数获得当前状态的部分。
+total=OrdersTotal(); 通过函数获得当前持仓单的个数，如果持仓单个数小于1，则说明是空仓状态，那末就进行多头和空头的入场条件判断，如果满足条件则进行入场。代码如下：
+if(total<1)
+    {
+   // no opened orders identified
+  if(AccountFreeMargin()<(1000*Lots))  这句诗判断保证金余量是否够下单，如果不够则直接返回，并不进行后续入场判断
+      {
+     Print("We have no money. Free Margin = ", AccountFreeMargin());
+     return(0);  
+      }
+   // check for long position (BUY) possibility
+  if(MacdCurrent<0 && MacdCurrent>SignalCurrent && MacdPrevious<SignalPrevious &&
+     MathAbs(MacdCurrent)>(MACDOpenLevel*Point) && MaCurrent>MaPrevious) 这句就是多头入场条件的判断，可以看到2个技巧，1、交叉 的数学意思是“前面再下后面在上”或反之 2、MA向上趋势 的数学意思是当前K线的MA大于上一K线的MA数值
+      {
+     ticket=OrderSend(Symbol(),OP_BUY,Lots,Ask,3,0,Ask+TakeProfit*Point,"macd sample",16384,0,Green); 这是入场语句 记得一定要判断入场是否成功，因为很多服务器由于滑点或者服务器价格变动而不能入场成功，所以，要判断入场不成功后作出提示。ticket就是定单入场是否成功的标记。
+     if(ticket>0) 大于0说明入场成功
+         {
+       if(OrderSelect(ticket,SELECT_BY_TICKET,MODE_TRADES)) Print("BUY order opened : ",OrderOpenPrice());
+         }
+     else Print("Error opening BUY order : ",GetLastError()); 入场不成功，输出不成功的系统原因。
+     return(0); 这里为什麽使用了返回呢。因为一种情况是入场成功，那末直接返回等待下一个价格到来的时候再执行start函数，另一种情况是入场不成功，则返回也是等待下一个价格到来的时候在此执行入场操作。
+      }
+   下面就是空单入场的判断了，大家自己对照观看即可
+   // check for short position (SELL) possibility
+  if(MacdCurrent>0 && MacdCurrent<SignalCurrent && MacdPrevious>SignalPrevious &&
+     MacdCurrent>(MACDOpenLevel*Point) && MaCurrent<MaPrevious)
+      {
+     ticket=OrderSend(Symbol(),OP_SELL,Lots,Bid,3,0,Bid-TakeProfit*Point,"macd sample",16384,0,Red);
+     if(ticket>0)
+         {
+       if(OrderSelect(ticket,SELECT_BY_TICKET,MODE_TRADES)) Print("SELL order opened : ",OrderOpenPrice());
+         }
+     else Print("Error opening SELL order : ",GetLastError());
+     return(0);
+      }
+   return(0);
+    }
